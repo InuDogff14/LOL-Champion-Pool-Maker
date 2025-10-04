@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOL Champion Pool Maker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none;
+        }
+        .champion-icon {
+            transition: transform 0.2s ease-in-out;
+            /* Ensure dragged items are visible over others */
+            position: relative; 
+        }
+        .champion-icon:hover {
+            transform: scale(1.1);
+            z-index: 10;
+        }
+        .dragging {
+            opacity: 0.5;
+        }
+        .champion-label-zone {
+            transition: background-color 0.2s ease;
+        }
+        .champion-label-zone img {
+             width: 100%;
+             height: 100%;
+             object-fit: cover;
+        }
+        .role-filter-btn {
+            background-color: #4a5568; /* bg-gray-600 */
+            border: 2px solid transparent;
+            transition: all 0.2s ease-in-out;
+        }
+        .role-filter-btn:hover {
+            background-color: #2d3748; /* bg-gray-800 */
+        }
+        .role-filter-btn.active {
+            background-color: #3182ce; /* bg-blue-600 */
+            border-color: #63b3ed; /* border-blue-300 */
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(49, 130, 206, 0.4);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white antialiased">
+
+    <div id="app" class="container mx-auto p-4 md:p-8">
+
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600">Champion Pool Maker</h1>
+            <p class="text-gray-400 mt-2">メインチャンピオンを一覧からドラッグして列を作成し、その右側に対戦相手などを配置してください。</p>
+        </header>
+
+        <!-- Tier List Container -->
+        <div id="tier-list-container" class="bg-gray-800 rounded-lg shadow-2xl mb-8 p-4 min-h-[100px]">
+            <!-- Champion rows will be generated here -->
+        </div>
+
+        <!-- Controls -->
+        <div class="flex flex-wrap justify-center gap-4 mb-8">
+            <button id="add-row-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                新しいチャンピオン列を追加
+            </button>
+            <button id="save-image-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                画像として保存
+            </button>
+             <button id="reset-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                リセット
+            </button>
+        </div>
+
+        <!-- Champion Pool -->
+        <div class="bg-gray-800 p-4 rounded-lg shadow-2xl">
+            <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+                 <h2 class="text-2xl font-bold text-gray-300">チャンピオン一覧</h2>
+                 <input type="text" id="champion-search" placeholder="チャンピオンを検索..." class="bg-gray-700 text-white border-2 border-gray-600 rounded-lg py-2 px-4 focus:outline-none focus:border-cyan-500 transition-colors w-full md:w-auto">
+            </div>
+            <!-- Role Filters -->
+            <div id="role-filters" class="flex flex-wrap gap-2 mb-4 justify-center">
+                <button class="role-filter-btn text-white font-bold py-2 px-4 rounded-lg active" data-role="All">All</button>
+                <button class="role-filter-btn text-white font-bold py-2 px-4 rounded-lg" data-role="Top">Top</button>
+                <button class="role-filter-btn text-white font-bold py-2 px-4 rounded-lg" data-role="Jungle">Jungle</button>
+                <button class="role-filter-btn text-white font-bold py-2 px-4 rounded-lg" data-role="Mid">Mid</button>
+                <button class="role-filter-btn text-white font-bold py-2 px-4 rounded-lg" data-role="ADC">ADC</button>
+                <button class="role-filter-btn text-white font-bold py-2 px-4 rounded-lg" data-role="Support">Support</button>
+            </div>
+            <div id="champion-pool" class="flex flex-wrap gap-2 justify-center min-h-[100px]">
+                <!-- Loading indicator -->
+                <div id="loading" class="text-center w-full mt-8">
+                    <p class="text-xl text-gray-400">チャンピオンデータを読み込み中...</p>
+                    <div class="mt-4 animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400 mx-auto"></div>
+                </div>
+                <!-- Champions will be loaded here -->
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <footer class="text-center mt-8 text-gray-500 text-sm">
+            <p>Powered by Riot Games Data Dragon API. Not affiliated with Riot Games.</p>
+        </footer>
+    </div>
+
+    <!-- Generic Modal -->
+    <div id="modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 rounded-lg p-6 shadow-xl w-full max-w-md">
+            <h3 id="modal-title" class="text-xl font-bold mb-4"></h3>
+            <p id="modal-body" class="text-gray-300 mb-4"></p>
+            <div class="flex justify-end gap-4">
+                <button id="modal-cancel-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">キャンセル</button>
+                <button id="modal-confirm-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">OK</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        const championPool = document.getElementById('champion-pool');
+        const tierListContainer = document.getElementById('tier-list-container');
+        const addRowBtn = document.getElementById('add-row-btn');
+        const saveImageBtn = document.getElementById('save-image-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const championSearch = document.getElementById('champion-search');
+        const loadingIndicator = document.getElementById('loading');
+
+        // Modal elements
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalCancelBtn = document.getElementById('modal-cancel-btn');
+        const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+        let modalResolve = null;
+        
+        let draggedItem = null;
+        let championsData = [];
+        let latestVersion = '';
+
+        const roleTags = {
+            Top: ['Fighter', 'Tank'],
+            Jungle: ['Fighter', 'Tank', 'Assassin'],
+            Mid: ['Mage', 'Assassin'],
+            ADC: ['Marksman'],
+            Support: ['Support', 'Mage'],
+        };
+        
+        // --- Data Fetching ---
+        async function fetchChampions() {
+            try {
+                loadingIndicator.style.display = 'block';
+                const versionsResponse = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
+                const versions = await versionsResponse.json();
+                latestVersion = versions[0];
+                
+                const response = await fetch(`https://ddragon.leagueoflegends.com/cdn/${latestVersion}/data/ja_JP/champion.json`);
+                const data = await response.json();
+                championsData = Object.values(data.data).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
+                filterAndDisplayChampions();
+
+            } catch (error) {
+                console.error('Error fetching champion data:', error);
+                championPool.innerHTML = '<p class="text-red-500">チャンピオンデータの読み込みに失敗しました。</p>';
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        function displayChampions(champions) {
+             championPool.innerHTML = '';
+             if (champions.length === 0) {
+                 championPool.innerHTML = '<p class="text-gray-400 w-full text-center">該当するチャンピオンがいません。</p>';
+                 return;
+             }
+             champions.forEach(champion => {
+                const img = document.createElement('img');
+                img.src = `https://ddragon.leagueoflegends.com/cdn/${latestVersion}/img/champion/${champion.id}.png`;
+                img.alt = champion.name;
+                img.title = champion.name;
+                img.dataset.id = champion.id; // Use dataset for id
+                img.className = 'w-12 h-12 md:w-16 md:h-16 rounded-md cursor-pointer champion-icon';
+                img.draggable = true;
+                
+                img.addEventListener('dragstart', handleDragStart);
+                img.addEventListener('dragend', handleDragEnd);
+
+                championPool.appendChild(img);
+            });
+        }
+
+        function filterAndDisplayChampions() {
+            const roleFilter = document.querySelector('.role-filter-btn.active').dataset.role;
+            const searchTerm = championSearch.value.toLowerCase();
+
+            let filteredChampions = championsData;
+
+            // 1. Filter by role
+            if (roleFilter !== 'All') {
+                filteredChampions = filteredChampions.filter(champ => 
+                    champ.tags.some(tag => roleTags[roleFilter].includes(tag))
+                );
+            }
+
+            // 2. Filter by search term
+            if (searchTerm) {
+                filteredChampions = filteredChampions.filter(champ =>
+                    champ.name.toLowerCase().includes(searchTerm) || champ.id.toLowerCase().includes(searchTerm)
+                );
+            }
+
+            displayChampions(filteredChampions);
+        }
+
+        // --- Row Management ---
+        function createChampionRow() {
+            const tierRow = document.createElement('div');
+            tierRow.className = 'flex items-stretch mb-1 tier-row';
+            
+            const championLabelZone = document.createElement('div');
+            championLabelZone.className = `w-20 md:w-24 flex items-center justify-center bg-gray-600 rounded-l-md champion-label-zone text-gray-400 text-xs text-center p-2`;
+            championLabelZone.textContent = 'メイン';
+            championLabelZone.addEventListener('dragover', handleDragOver);
+            championLabelZone.addEventListener('drop', handleDrop);
+            
+            const dropZone = document.createElement('div');
+            dropZone.className = 'flex-1 bg-gray-700 min-h-[80px] md:min-h-[96px] p-2 flex flex-wrap items-start content-start gap-2 rounded-r-md drop-zone';
+            dropZone.addEventListener('dragover', handleDragOver);
+            dropZone.addEventListener('drop', handleDrop);
+
+            const controlsContainer = document.createElement('div');
+            controlsContainer.className = 'flex flex-col justify-center ml-2';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = '✖';
+            deleteBtn.className = 'text-gray-400 hover:text-red-500 text-xl font-bold transition-colors';
+            deleteBtn.title = '列を削除';
+            deleteBtn.onclick = () => tierRow.remove();
+            
+            controlsContainer.appendChild(deleteBtn);
+            
+            tierRow.appendChild(championLabelZone);
+            tierRow.appendChild(dropZone);
+            tierRow.appendChild(controlsContainer);
+
+            tierListContainer.appendChild(tierRow);
+        }
+
+        async function handleReset() {
+            const confirmed = await showModal({
+                title: '本当にリセットしますか？',
+                body: '全ての配置が初期状態に戻ります。',
+            });
+
+            if (confirmed) {
+                tierListContainer.innerHTML = '';
+            }
+        }
+
+        // --- Drag and Drop Handlers ---
+        function handleDragStart(e) {
+            draggedItem = e.target;
+            setTimeout(() => {
+                e.target.classList.add('dragging');
+            }, 0);
+        }
+
+        function handleDragEnd(e) {
+            e.target.classList.remove('dragging');
+            draggedItem = null;
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+        }
+
+        function handleDragScroll(e) {
+            if (!draggedItem) return;
+
+            const scrollSensitivity = 60; // How close to the edge to start scrolling (in pixels)
+            const scrollSpeed = 15; // How fast to scroll
+
+            const clientY = e.clientY;
+            
+            // Scroll up
+            if (clientY < scrollSensitivity) {
+                window.scrollBy(0, -scrollSpeed);
+            } 
+            // Scroll down
+            else if (clientY > window.innerHeight - scrollSensitivity) {
+                window.scrollBy(0, scrollSpeed);
+            }
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            if (!draggedItem) return;
+
+            const targetLabelZone = e.target.closest('.champion-label-zone');
+            const targetDropZone = e.target.closest('.drop-zone');
+            const targetPool = e.target.closest('#champion-pool');
+
+            const sourceIsPool = draggedItem.parentElement.id === 'champion-pool';
+
+            if (targetLabelZone) {
+                const itemToDrop = sourceIsPool ? draggedItem.cloneNode(true) : draggedItem;
+                itemToDrop.addEventListener('dragstart', handleDragStart);
+                itemToDrop.addEventListener('dragend', handleDragEnd);
+                itemToDrop.className = 'w-full h-full object-cover champion-icon rounded-l-md';
+                targetLabelZone.innerHTML = '';
+                targetLabelZone.style.padding = '0';
+                targetLabelZone.appendChild(itemToDrop);
+            } else if (targetDropZone) {
+                const itemToDrop = sourceIsPool ? draggedItem.cloneNode(true) : draggedItem;
+                itemToDrop.addEventListener('dragstart', handleDragStart);
+                itemToDrop.addEventListener('dragend', handleDragEnd);
+                itemToDrop.className = 'w-12 h-12 md:w-16 md:h-16 rounded-md cursor-pointer champion-icon';
+                targetDropZone.appendChild(itemToDrop);
+            } else if (targetPool) {
+                if (!sourceIsPool) {
+                    draggedItem.remove();
+                }
+            }
+        }
+        
+        // --- Save as Image ---
+        function handleSaveImage() {
+            const originalBackgroundColor = tierListContainer.style.backgroundColor;
+            tierListContainer.style.backgroundColor = '#2d3748'; // bg-gray-800
+
+            html2canvas(tierListContainer, {
+                useCORS: true,
+                backgroundColor: '#2d3748',
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'lol_champion_pool.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                tierListContainer.style.backgroundColor = originalBackgroundColor;
+            }).catch(err => {
+                console.error('oops, something went wrong!', err);
+                tierListContainer.style.backgroundColor = originalBackgroundColor;
+            });
+        }
+        
+        // --- Search Functionality ---
+        function handleSearch() {
+            filterAndDisplayChampions();
+        }
+
+        // --- Modal Logic ---
+        function showModal({ title, body }) {
+            modalTitle.textContent = title;
+            modalBody.textContent = body;
+            modal.classList.remove('hidden');
+            
+            return new Promise(resolve => {
+                modalResolve = resolve;
+            });
+        }
+
+        function closeModal(value) {
+            modal.classList.add('hidden');
+            if (modalResolve) {
+                modalResolve(value);
+                modalResolve = null;
+            }
+        }
+
+        function setupRoleFilters() {
+            const filterButtons = document.querySelectorAll('.role-filter-btn');
+            filterButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    filterButtons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    filterAndDisplayChampions();
+                });
+            });
+        }
+
+        // --- Event Listeners ---
+        addRowBtn.addEventListener('click', createChampionRow);
+        saveImageBtn.addEventListener('click', handleSaveImage);
+        resetBtn.addEventListener('click', handleReset);
+        championSearch.addEventListener('input', handleSearch);
+        
+        modalCancelBtn.addEventListener('click', () => closeModal(false));
+        modalConfirmBtn.addEventListener('click', () => closeModal(true));
+        
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+                closeModal(false);
+            }
+        });
+
+        // Add a global dragover listener for scrolling
+        document.addEventListener('dragover', handleDragScroll);
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchChampions();
+            setupRoleFilters();
+            championPool.addEventListener('dragover', handleDragOver);
+            championPool.addEventListener('drop', handleDrop);
+        });
+    </script>
+</body>
+</html>
+

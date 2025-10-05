@@ -55,7 +55,7 @@
         <!-- Header -->
         <header class="text-center mb-8">
             <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600">Champion Pool Maker</h1>
-            <p class="text-gray-400 mt-2">メインチャンピオンを一覧からドラッグして列を作成し、その右側に対戦相手などを配置してください。</p>
+            <p class="text-gray-400 mt-2">アイコンをダブルクリックで削除。レイアウトの保存/読み込みも可能です。</p>
         </header>
 
         <!-- Tier List Container -->
@@ -65,15 +65,12 @@
 
         <!-- Controls -->
         <div class="flex flex-wrap justify-center gap-4 mb-8">
-            <button id="add-row-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
-                新しいチャンピオン列を追加
-            </button>
-            <button id="save-image-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
-                画像として保存
-            </button>
-             <button id="reset-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
-                リセット
-            </button>
+            <button id="add-row-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">新しいチャンピオン列を追加</button>
+            <button id="save-image-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">画像として保存</button>
+            <button id="save-layout-btn" class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">レイアウトを保存</button>
+            <button id="load-layout-btn" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">レイアウトを読み込み</button>
+            <input type="file" id="load-layout-input" class="hidden" accept=".json">
+            <button id="reset-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">リセット</button>
         </div>
 
         <!-- Champion Pool -->
@@ -121,6 +118,7 @@
 
 
     <script>
+        // DOM Elements
         const championPool = document.getElementById('champion-pool');
         const tierListContainer = document.getElementById('tier-list-container');
         const addRowBtn = document.getElementById('add-row-btn');
@@ -128,6 +126,9 @@
         const resetBtn = document.getElementById('reset-btn');
         const championSearch = document.getElementById('champion-search');
         const loadingIndicator = document.getElementById('loading');
+        const saveLayoutBtn = document.getElementById('save-layout-btn');
+        const loadLayoutBtn = document.getElementById('load-layout-btn');
+        const loadLayoutInput = document.getElementById('load-layout-input');
 
         // Modal elements
         const modal = document.getElementById('modal');
@@ -137,6 +138,7 @@
         const modalConfirmBtn = document.getElementById('modal-confirm-btn');
         let modalResolve = null;
         
+        // State
         let draggedItem = null;
         let championsData = [];
         let latestVersion = '';
@@ -178,19 +180,28 @@
                  return;
              }
              champions.forEach(champion => {
-                const img = document.createElement('img');
-                img.src = `https://ddragon.leagueoflegends.com/cdn/${latestVersion}/img/champion/${champion.id}.png`;
-                img.alt = champion.name;
-                img.title = champion.name;
-                img.dataset.id = champion.id; // Use dataset for id
-                img.className = 'w-12 h-12 md:w-16 md:h-16 rounded-md cursor-pointer champion-icon';
-                img.draggable = true;
-                
-                img.addEventListener('dragstart', handleDragStart);
-                img.addEventListener('dragend', handleDragEnd);
-
+                const img = createChampionIcon(champion.id, champion.name);
                 championPool.appendChild(img);
             });
+        }
+        
+        function createChampionIcon(id, name, isPlaced = false) {
+            const img = document.createElement('img');
+            img.src = `https://ddragon.leagueoflegends.com/cdn/${latestVersion}/img/champion/${id}.png`;
+            img.alt = name;
+            img.title = name;
+            img.dataset.id = id;
+            img.className = 'w-12 h-12 md:w-16 md:h-16 rounded-md cursor-pointer champion-icon';
+            img.draggable = true;
+            
+            img.addEventListener('dragstart', handleDragStart);
+            img.addEventListener('dragend', handleDragEnd);
+            
+            if (isPlaced) {
+                img.addEventListener('dblclick', (e) => e.target.remove());
+            }
+
+            return img;
         }
 
         function filterAndDisplayChampions() {
@@ -199,14 +210,12 @@
 
             let filteredChampions = championsData;
 
-            // 1. Filter by role
             if (roleFilter !== 'All') {
                 filteredChampions = filteredChampions.filter(champ => 
                     champ.tags.some(tag => roleTags[roleFilter].includes(tag))
                 );
             }
 
-            // 2. Filter by search term
             if (searchTerm) {
                 filteredChampions = filteredChampions.filter(champ =>
                     champ.name.toLowerCase().includes(searchTerm) || champ.id.toLowerCase().includes(searchTerm)
@@ -248,6 +257,7 @@
             tierRow.appendChild(controlsContainer);
 
             tierListContainer.appendChild(tierRow);
+            return tierRow;
         }
 
         async function handleReset() {
@@ -264,9 +274,7 @@
         // --- Drag and Drop Handlers ---
         function handleDragStart(e) {
             draggedItem = e.target;
-            setTimeout(() => {
-                e.target.classList.add('dragging');
-            }, 0);
+            setTimeout(() => e.target.classList.add('dragging'), 0);
         }
 
         function handleDragEnd(e) {
@@ -280,20 +288,10 @@
 
         function handleDragScroll(e) {
             if (!draggedItem) return;
-
-            const scrollSensitivity = 60; // How close to the edge to start scrolling (in pixels)
-            const scrollSpeed = 15; // How fast to scroll
-
+            const scrollSensitivity = 60, scrollSpeed = 15;
             const clientY = e.clientY;
-            
-            // Scroll up
-            if (clientY < scrollSensitivity) {
-                window.scrollBy(0, -scrollSpeed);
-            } 
-            // Scroll down
-            else if (clientY > window.innerHeight - scrollSensitivity) {
-                window.scrollBy(0, scrollSpeed);
-            }
+            if (clientY < scrollSensitivity) window.scrollBy(0, -scrollSpeed);
+            else if (clientY > window.innerHeight - scrollSensitivity) window.scrollBy(0, scrollSpeed);
         }
 
         function handleDrop(e) {
@@ -303,13 +301,13 @@
             const targetLabelZone = e.target.closest('.champion-label-zone');
             const targetDropZone = e.target.closest('.drop-zone');
             const targetPool = e.target.closest('#champion-pool');
-
             const sourceIsPool = draggedItem.parentElement.id === 'champion-pool';
 
             if (targetLabelZone) {
                 const itemToDrop = sourceIsPool ? draggedItem.cloneNode(true) : draggedItem;
                 itemToDrop.addEventListener('dragstart', handleDragStart);
                 itemToDrop.addEventListener('dragend', handleDragEnd);
+                itemToDrop.addEventListener('dblclick', (e) => e.target.remove());
                 itemToDrop.className = 'w-full h-full object-cover champion-icon rounded-l-md';
                 targetLabelZone.innerHTML = '';
                 targetLabelZone.style.padding = '0';
@@ -318,24 +316,19 @@
                 const itemToDrop = sourceIsPool ? draggedItem.cloneNode(true) : draggedItem;
                 itemToDrop.addEventListener('dragstart', handleDragStart);
                 itemToDrop.addEventListener('dragend', handleDragEnd);
+                itemToDrop.addEventListener('dblclick', (e) => e.target.remove());
                 itemToDrop.className = 'w-12 h-12 md:w-16 md:h-16 rounded-md cursor-pointer champion-icon';
                 targetDropZone.appendChild(itemToDrop);
-            } else if (targetPool) {
-                if (!sourceIsPool) {
-                    draggedItem.remove();
-                }
+            } else if (targetPool && !sourceIsPool) {
+                draggedItem.remove();
             }
         }
         
-        // --- Save as Image ---
+        // --- Save / Load / Export ---
         function handleSaveImage() {
             const originalBackgroundColor = tierListContainer.style.backgroundColor;
             tierListContainer.style.backgroundColor = '#2d3748'; // bg-gray-800
-
-            html2canvas(tierListContainer, {
-                useCORS: true,
-                backgroundColor: '#2d3748',
-            }).then(canvas => {
+            html2canvas(tierListContainer, { useCORS: true, backgroundColor: '#2d3748' }).then(canvas => {
                 const link = document.createElement('a');
                 link.download = 'lol_champion_pool.png';
                 link.href = canvas.toDataURL('image/png');
@@ -346,7 +339,75 @@
                 tierListContainer.style.backgroundColor = originalBackgroundColor;
             });
         }
-        
+
+        function handleSaveLayout() {
+            const layoutData = [];
+            document.querySelectorAll('.tier-row').forEach(row => {
+                const mainChampImg = row.querySelector('.champion-label-zone img');
+                const relatedChamps = Array.from(row.querySelectorAll('.drop-zone img'));
+                
+                layoutData.push({
+                    main: mainChampImg ? mainChampImg.dataset.id : null,
+                    related: relatedChamps.map(img => img.dataset.id)
+                });
+            });
+
+            const dataStr = JSON.stringify(layoutData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.download = 'lol_pool.json';
+            link.href = url;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function handleLoadLayout(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const layoutData = JSON.parse(e.target.result);
+                    renderLayout(layoutData);
+                } catch (error) {
+                    alert('無効なファイル形式です。');
+                    console.error('Error parsing layout file:', error);
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = ''; // Reset input
+        }
+
+        function renderLayout(layoutData) {
+            tierListContainer.innerHTML = '';
+            layoutData.forEach(rowData => {
+                const newRow = createChampionRow();
+                const labelZone = newRow.querySelector('.champion-label-zone');
+                const dropZone = newRow.querySelector('.drop-zone');
+
+                if (rowData.main) {
+                    const champ = championsData.find(c => c.id === rowData.main);
+                    if (champ) {
+                        const icon = createChampionIcon(champ.id, champ.name, true);
+                        icon.className = 'w-full h-full object-cover champion-icon rounded-l-md';
+                        labelZone.innerHTML = '';
+                        labelZone.style.padding = '0';
+                        labelZone.appendChild(icon);
+                    }
+                }
+
+                rowData.related.forEach(champId => {
+                    const champ = championsData.find(c => c.id === champId);
+                    if (champ) {
+                        const icon = createChampionIcon(champ.id, champ.name, true);
+                        dropZone.appendChild(icon);
+                    }
+                });
+            });
+        }
+
         // --- Search Functionality ---
         function handleSearch() {
             filterAndDisplayChampions();
@@ -357,18 +418,12 @@
             modalTitle.textContent = title;
             modalBody.textContent = body;
             modal.classList.remove('hidden');
-            
-            return new Promise(resolve => {
-                modalResolve = resolve;
-            });
+            return new Promise(resolve => { modalResolve = resolve; });
         }
 
         function closeModal(value) {
             modal.classList.add('hidden');
-            if (modalResolve) {
-                modalResolve(value);
-                modalResolve = null;
-            }
+            if (modalResolve) { modalResolve(value); modalResolve = null; }
         }
 
         function setupRoleFilters() {
@@ -387,17 +442,13 @@
         saveImageBtn.addEventListener('click', handleSaveImage);
         resetBtn.addEventListener('click', handleReset);
         championSearch.addEventListener('input', handleSearch);
+        saveLayoutBtn.addEventListener('click', handleSaveLayout);
+        loadLayoutBtn.addEventListener('click', () => loadLayoutInput.click());
+        loadLayoutInput.addEventListener('change', handleLoadLayout);
         
         modalCancelBtn.addEventListener('click', () => closeModal(false));
         modalConfirmBtn.addEventListener('click', () => closeModal(true));
-        
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
-                closeModal(false);
-            }
-        });
-
-        // Add a global dragover listener for scrolling
+        window.addEventListener('keydown', e => e.key === 'Escape' && !modal.classList.contains('hidden') && closeModal(false));
         document.addEventListener('dragover', handleDragScroll);
 
         // --- Initial Load ---
